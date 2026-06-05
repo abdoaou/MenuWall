@@ -63,15 +63,25 @@ export function useLookupData() {
   );
 
   const categoriesForWebsite = useCallback(
-    (websiteId: number | '') => {
-      if (!websiteId) return categories;
-      const wid = Number(websiteId);
-      const parentIds = new Set(
-        parentCategories.filter((p) => p.website_id === wid).map((p) => p.id)
-      );
-      return categories.filter(
-        (c) => c.parent_id !== null && parentIds.has(c.parent_id)
-      );
+    (websiteId: number | '', parentCategoryId?: number | string) => {
+      let list = categories;
+
+      if (websiteId) {
+        const wid = Number(websiteId);
+        const parentIds = new Set(
+          parentCategories.filter((p) => p.website_id === wid).map((p) => p.id)
+        );
+        list = categories.filter(
+          (c) => c.parent_id === null || parentIds.has(c.parent_id)
+        );
+      }
+
+      if (parentCategoryId) {
+        const pid = Number(parentCategoryId);
+        list = list.filter((c) => c.parent_id === pid);
+      }
+
+      return list;
     },
     [categories, parentCategories]
   );

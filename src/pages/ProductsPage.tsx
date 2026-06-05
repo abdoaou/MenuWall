@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import { IconEdit, IconLayoutGrid, IconList, IconPlus, IconSearch } from '@tabler/icons-react';
+import { IconEdit, IconLayoutGrid, IconList, IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
 import { Alert } from '../components/Alert';
 import { EntityFormModal } from '../components/EntityFormModal';
 import { PageHeader } from '../components/PageHeader';
 import { ProductCard } from '../components/ProductCard';
+import { ProductVariantsEditor } from '../components/ProductVariantsEditor';
 import { StatusBadge } from '../components/StatusBadge';
 import { PRODUCT_FORM_FIELDS } from '../config/adminResources';
 import { useApi } from '../context/ApiContext';
 import { rowToForm, useLookupData } from '../hooks/useLookupData';
-import { buildFormBody, emptyFormFromFields } from '../utils/formBody';
+import { buildFormBody, buildMultipartBody, emptyFormFromFields } from '../utils/formBody';
 import {
   assetUrl,
   formatMoney,
@@ -20,11 +21,12 @@ import {
 type ViewMode = 'grid' | 'table';
 
 export function ProductsPage() {
-  const { request } = useApi();
-  const { refresh: refreshLookups } = useLookupData();
+  const { request, config } = useApi();
+  const { refresh: refreshLookups, parentById, categories } = useLookupData();
   const [products, setProducts] = useState<ApiRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [view, setView] = useState<ViewMode>('grid');
@@ -32,7 +34,44 @@ export function ProductsPage() {
   const [editing, setEditing] = useState<ApiRow | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | string | null>(null);
+  const [variants, setVariants] = useState<ApiRow[]>([]);
+
+  const categoryLabel = (id: unknown) => {
+    const cat = categories.find((c) => c.id === Number(id));
+    return cat?.name ?? (id ? String(id) : '—');
+  };
+
+  const parentCategoryLabel = (id: unknown) => {
+    const parent = parentById(Number(id));
+    return parent?.name ?? (id ? String(id) : '—');
+  };
+
+  const isFeatured = form.featured === 'true';
+
+  const createDraftVariants = async (productId: number | string) => {
+    for (const v of variants) {
+      const body: Record<string, unknown> = {
+        product_id: Number(productId),
+        name: v.name,
+        status: v.status ?? 'active',
+        stock: v.stock !== undefined ? Number(v.stock) : 0,
+      };
+      if (v.sku) body.sku = v.sku;
+      if (v.price !== undefined && v.price !== null && v.price !== '') body.price = Number(v.price);
+      if (v.sale_price !== undefined && v.sale_price !== null && v.sale_price !== '') {
+        body.sale_price = Number(v.sale_price);
+      }
+      const res = await request({ method: 'POST', path: '/product-variants', body });
+      if (!res.ok) {
+        setError((res.data as { message?: string })?.message ?? 'Product saved but a variant failed');
+        return false;
+      }
+    }
+    return true;
+  };
 
   const isEdit = Boolean(editing);
 
@@ -66,7 +105,11 @@ export function ProductsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm(emptyFormFromFields(PRODUCT_FORM_FIELDS));
+    const next = emptyFormFromFields(PRODUCT_FORM_FIELDS);
+    if (config.websiteId) next.website_id = config.websiteId;
+    setForm(next);
+    setImageFile(null);
+    setVariants([]);
     setShowForm(true);
     refreshLookups();
   };
@@ -80,6 +123,8 @@ export function ProductsPage() {
       next.featured = row.featured ? 'true' : 'false';
     }
     setForm(next);
+    setImageFile(null);
+    setVariants([]);
     setShowForm(true);
     refreshLookups();
   };
@@ -88,12 +133,14 @@ export function ProductsPage() {
     setShowForm(false);
     setEditing(null);
     setForm({});
+    setImageFile(null);
+    setVariants([]);
   };
 
   const handleSave = async () => {
     setSaving(true);
     setError('');
-    const body = buildFormBody(form, PRODUCT_FORM_FIELDS, isEdit);
+    const body = buildFormBody(form, PRODUCT_FORM_FIELDS, isEdit, { skipImage: true });
 
     if (!body.website_id) {
       setSaving(false);
@@ -104,13 +151,60 @@ export function ProductsPage() {
     const path = isEdit ? `/products/${editing?.id}` : '/products';
     const method = isEdit ? 'PUT' : 'POST';
 
-    const res = await request({ method, path, body });
+    const res = await request(
+      imageFile
+        ? { method, path, formData: buildMultipartBody(body, imageFile) }
+        : { method, path, body }
+    );
     setSaving(false);
     if (!res.ok) {
       setError((res.data as { message?: string })?.message ?? 'Could not save product');
       return;
     }
+
+    if (!isEdit && isFeatured && variants.length > 0) {
+      const created = (res.data as { data?: ApiRow })?.data;
+      const newId = created?.id;
+      if (newId !== undefined && newId !== null && newId !== '') {
+        const ok = await createDraftVariants(newId as number | string);
+        if (!ok) {
+          load();
+          return;
+        }
+      }
+    }
+
     closeForm();
+    load();
+  };
+
+  const handleDelete = async (row: ApiRow) => {
+    const id = row.id;
+    if (!id) return;
+
+    const name = rowText(row, 'name');
+    if (!confirm(`Delete "${name}"? This will permanently remove it from the database.`)) return;
+
+    setDeletingId(id as number | string);
+    setError('');
+    setSuccess('');
+    const res = await request({ method: 'DELETE', path: `/products/${id}` });
+    setDeletingId(null);
+
+    if (!res.ok) {
+      const msg = (res.data as { message?: string })?.message ?? 'Could not delete product';
+      setError(
+        res.status === 401
+          ? `${msg} — log in again and retry.`
+          : msg
+      );
+      return;
+    }
+
+    setProducts((prev) => prev.filter((p) => String(p.id) !== String(id)));
+    setSuccess(`"${name}" was deleted from the database.`);
+    if (String(selected?.id) === String(id)) setSelected(null);
+    if (String(editing?.id) === String(id)) closeForm();
     load();
   };
 
@@ -129,6 +223,7 @@ export function ProductsPage() {
 
       <div className="page-body">
         <div className="container-xl">
+          <Alert type="success" message={success} onClose={() => setSuccess('')} />
           <Alert type="danger" message={error} onClose={() => setError('')} />
 
           <div className="card mb-3">
@@ -244,13 +339,23 @@ export function ProductsPage() {
                             <StatusBadge status={p.status} />
                           </td>
                           <td>
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-outline-primary"
-                              onClick={() => openEdit(p)}
-                            >
-                              <IconEdit size={16} /> Edit
-                            </button>
+                            <div className="btn-list flex-nowrap">
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary"
+                                onClick={() => openEdit(p)}
+                              >
+                                <IconEdit size={16} /> Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-danger"
+                                disabled={deletingId === p.id}
+                                onClick={() => handleDelete(p)}
+                              >
+                                <IconTrash size={16} /> Delete
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -290,9 +395,9 @@ export function ProductsPage() {
                         <dt className="col-5">SKU</dt>
                         <dd className="col-7">{rowText(selected, 'sku')}</dd>
                         <dt className="col-5">Category</dt>
-                        <dd className="col-7">{rowText(selected, 'category_id')}</dd>
+                        <dd className="col-7">{categoryLabel(selected.category_id)}</dd>
                         <dt className="col-5">Parent category</dt>
-                        <dd className="col-7">{rowText(selected, 'parent_category_id')}</dd>
+                        <dd className="col-7">{parentCategoryLabel(selected.parent_category_id)}</dd>
                         <dt className="col-5">Status</dt>
                         <dd className="col-7">
                           <StatusBadge status={selected.status} />
@@ -308,6 +413,15 @@ export function ProductsPage() {
                 <div className="modal-footer">
                   <button type="button" className="btn btn-secondary" onClick={() => setSelected(null)}>
                     Close
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline-danger"
+                    disabled={deletingId === selected.id}
+                    onClick={() => handleDelete(selected)}
+                  >
+                    <IconTrash size={18} className="me-1" />
+                    {deletingId === selected.id ? 'Deleting…' : 'Delete'}
                   </button>
                   <button type="button" className="btn btn-primary" onClick={() => openEdit(selected)}>
                     <IconEdit size={18} className="me-1" />
@@ -332,7 +446,17 @@ export function ProductsPage() {
           onClose={closeForm}
           onSave={handleSave}
           saveDisabled={!form.name || !form.sku || !form.website_id}
-        />
+          imageFile={imageFile}
+          setImageFile={setImageFile}
+        >
+          <ProductVariantsEditor
+            enabled={isFeatured}
+            productId={editing?.id as number | string | undefined}
+            variants={variants}
+            onChange={setVariants}
+            onError={setError}
+          />
+        </EntityFormModal>
       )}
     </>
   );

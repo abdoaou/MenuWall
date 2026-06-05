@@ -5,12 +5,14 @@ const SKIP_KEYS = new Set(['website_filter']);
 export function buildFormBody(
   form: Record<string, string>,
   fields: FieldDef[],
-  isEdit?: boolean
+  isEdit?: boolean,
+  opts?: { skipImage?: boolean }
 ): Record<string, unknown> {
   const body: Record<string, unknown> = {};
 
   fields.forEach((f) => {
     if (SKIP_KEYS.has(f.name)) return;
+    if (opts?.skipImage && f.type === 'image') return;
     if (f.type === 'parent_category_readonly') {
       const pid = form[f.name]?.trim();
       if (pid) body[f.name] = Number(pid);
@@ -20,6 +22,7 @@ export function buildFormBody(
     if (f.showOn === 'edit' && !isEdit) return;
 
     const raw = form[f.name]?.trim() ?? '';
+    if (f.type === 'image') return;
     if (!raw) {
       if (f.name === 'password' && isEdit) return;
       return;
@@ -52,6 +55,20 @@ export function buildFormBody(
   }
 
   return body;
+}
+
+export function buildMultipartBody(body: Record<string, unknown>, file: File): FormData {
+  const fd = new FormData();
+  Object.entries(body).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    if (typeof value === 'boolean') {
+      fd.append(key, value ? 'true' : 'false');
+    } else {
+      fd.append(key, String(value));
+    }
+  });
+  fd.append('image', file);
+  return fd;
 }
 
 export function emptyFormFromFields(fields: FieldDef[]): Record<string, string> {

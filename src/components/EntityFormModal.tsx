@@ -1,5 +1,6 @@
 import { FormFields } from './FormFields';
 import type { FieldDef } from '../config/adminResources';
+import type { ReactNode } from 'react';
 
 type Props = {
   title: string;
@@ -11,6 +12,9 @@ type Props = {
   onClose: () => void;
   onSave: () => void;
   saveDisabled?: boolean;
+  imageFile?: File | null;
+  setImageFile?: (file: File | null) => void;
+  children?: ReactNode;
 };
 
 export function EntityFormModal({
@@ -23,6 +27,9 @@ export function EntityFormModal({
   onClose,
   onSave,
   saveDisabled,
+  imageFile,
+  setImageFile,
+  children,
 }: Props) {
   return (
     <>
@@ -34,7 +41,15 @@ export function EntityFormModal({
               <button type="button" className="btn-close" onClick={onClose} aria-label="Close" />
             </div>
             <div className="modal-body">
-              <FormFields fields={fields} form={form} setForm={setForm} isEdit={isEdit} />
+              <FormFields
+                fields={fields}
+                form={form}
+                setForm={setForm}
+                isEdit={isEdit}
+                imageFile={imageFile}
+                setImageFile={setImageFile}
+              />
+              {children}
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-link" onClick={onClose}>

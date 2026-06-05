@@ -17,7 +17,8 @@ export type FieldDef = {
     | 'parent_category_readonly'
     | 'status'
     | 'status_product'
-    | 'checkbox';
+    | 'checkbox'
+    | 'image';
   required?: boolean;
   optionalOnEdit?: boolean;
   showOn?: 'create' | 'edit' | 'both';
@@ -42,8 +43,8 @@ export type ResourceDef = {
 
 export const PRODUCT_FORM_FIELDS: FieldDef[] = [
   { name: 'website_id', label: 'Website', type: 'website', required: true },
+  { name: 'parent_category_id', label: 'Parent category', type: 'parent_category' },
   { name: 'category_id', label: 'Category', type: 'category' },
-  { name: 'parent_category_id', label: 'Parent category', type: 'parent_category_readonly' },
   { name: 'name', label: 'Name', required: true },
   { name: 'slug', label: 'Slug' },
   { name: 'short_description', label: 'Short description', type: 'textarea' },
@@ -52,6 +53,7 @@ export const PRODUCT_FORM_FIELDS: FieldDef[] = [
   { name: 'sale_price', label: 'Sale price', type: 'number' },
   { name: 'stock', label: 'Stock', type: 'number', required: true },
   { name: 'sku', label: 'SKU', required: true },
+  { name: 'image', label: 'Product image', type: 'image' },
   { name: 'status', label: 'Status', type: 'status_product' },
   { name: 'featured', label: 'Featured product', type: 'checkbox' },
 ];
