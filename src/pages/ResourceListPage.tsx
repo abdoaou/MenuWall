@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { IconEdit, IconPlus, IconRefresh } from '@tabler/icons-react';
+import { IconClipboard, IconEdit, IconPlus, IconRefresh } from '@tabler/icons-react';
+import { loadStoredApiKeys, removeStoredApiKey, saveStoredApiKey } from '../api/apiKeyStorage';
 import { Alert } from '../components/Alert';
 import { EntityFormModal } from '../components/EntityFormModal';
 import { PageHeader } from '../components/PageHeader';
 import type { ResourceDef } from '../config/adminResources';
+import { tenant } from '../config/tenant';
 import { useApi } from '../context/ApiContext';
+import { filterResourceRows } from '../utils/tenantFilters';
 import { rowToForm, useLookupData } from '../hooks/useLookupData';
 import { buildFormBody, emptyFormFromFields } from '../utils/formBody';
 import { rowText, unwrapList, type ApiRow } from '../utils/apiData';
@@ -38,15 +41,75 @@ function enrichFormFromRow(
 }
 
 export function ResourceListPage({ resource }: Props) {
-  const { request, config } = useApi();
-  const { parentCategories, refresh: refreshLookups } = useLookupData();
+  const { request, config, setConfig } = useApi();
+  const { parentCategories, websites, refresh: refreshLookups } = useLookupData();
   const [rows, setRows] = useState<ApiRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [storedKeys, setStoredKeys] = useState(loadStoredApiKeys);
   const [form, setForm] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<ApiRow | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const websiteLabel = (id: unknown) => {
+    const site = websites.find((w) => w.id === Number(id));
+    return site?.name ?? (id ? String(id) : '—');
+  };
+
+  const renderCell = (key: string, row: ApiRow, render?: (row: ApiRow) => React.ReactNode) => {
+    if (key === 'key' && resource.id === 'api-keys') {
+      const stored = storedKeys[String(row.id)];
+      const fullKey = stored?.key;
+      const prefix = row.key_prefix ? String(row.key_prefix) : '';
+
+      const copyKey = async (value: string) => {
+        try {
+          await navigator.clipboard.writeText(value);
+          setSuccess('API key copied to clipboard.');
+        } catch {
+          setError('Could not copy to clipboard.');
+        }
+      };
+
+      if (fullKey) {
+        return (
+          <div className="d-flex flex-column gap-1">
+            <code className="small user-select-all">{fullKey}</code>
+            <div className="btn-list">
+              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => copyKey(fullKey)}>
+                <IconClipboard size={14} className="me-1" />
+                Copy
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-primary"
+                onClick={() => {
+                  setConfig({ apiKey: fullKey });
+                  setSuccess('API key set for public API requests.');
+                }}
+              >
+                Use key
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <span className="text-secondary small">
+          {prefix ? `${prefix}…` : '—'}
+          <br />
+          Full key not saved — create a new key to view it once.
+        </span>
+      );
+    }
+
+    if (render) return render(row);
+    if (key === 'website_id') return websiteLabel(row.website_id);
+    return rowText(row, key);
+  };
 
   const needsTenant = resource.needsTenant && !config.websiteId;
   const isEdit = Boolean(editing);
@@ -66,8 +129,8 @@ export function ResourceListPage({ resource }: Props) {
       return;
     }
     const data = (res.data as { data?: unknown })?.data ?? res.data;
-    setRows(unwrapList(data));
-  }, [request, resource.path]);
+    setRows(filterResourceRows(resource.id, unwrapList(data), parentCategories));
+  }, [request, resource.path, resource.id, parentCategories]);
 
   useEffect(() => {
     load();
@@ -75,7 +138,15 @@ export function ResourceListPage({ resource }: Props) {
 
   const openCreate = () => {
     setEditing(null);
-    setForm(emptyFormFromFields(resource.formFields));
+    const next = emptyFormFromFields(resource.formFields);
+    if (resource.id === 'admins' && config.websiteId) {
+      next.website_id = config.websiteId;
+    }
+    if (tenant.lockWebsite && tenant.websiteId) {
+      if (resource.id === 'parent-categories') next.website_id = tenant.websiteId;
+      if (resource.id === 'categories') next.website_filter = tenant.websiteId;
+    }
+    setForm(next);
     setShowForm(true);
     refreshLookups();
   };
@@ -129,6 +200,27 @@ export function ResourceListPage({ resource }: Props) {
       setError((res.data as { message?: string })?.message ?? 'Could not save');
       return;
     }
+
+    if (resource.id === 'api-keys' && method === 'POST') {
+      const payload = (res.data as { data?: ApiRow & { key?: string } })?.data ?? res.data;
+      const fullKey = payload && typeof payload === 'object' ? String((payload as ApiRow).key ?? '') : '';
+      const id = payload && typeof payload === 'object' ? (payload as ApiRow).id : undefined;
+      const name = payload && typeof payload === 'object' ? String((payload as ApiRow).name ?? form.name) : form.name;
+
+      if (fullKey && id !== undefined && id !== null) {
+        const entry = {
+          id: String(id),
+          name,
+          key: fullKey,
+          savedAt: new Date().toISOString(),
+        };
+        saveStoredApiKey(entry);
+        setStoredKeys(loadStoredApiKeys());
+        setConfig({ apiKey: fullKey });
+        setSuccess(`New API key created. Copy it now — it is shown below and saved in this browser.`);
+      }
+    }
+
     closeForm();
     load();
   };
@@ -144,6 +236,10 @@ export function ResourceListPage({ resource }: Props) {
     if (!res.ok) {
       setError((res.data as { message?: string })?.message ?? 'Delete failed');
       return;
+    }
+    if (resource.id === 'api-keys') {
+      removeStoredApiKey(id as string | number);
+      setStoredKeys(loadStoredApiKeys());
     }
     load();
   };
@@ -183,6 +279,28 @@ export function ResourceListPage({ resource }: Props) {
           {needsTenant && (
             <Alert type="warning" message="Set Website ID in the top bar for this section." />
           )}
+          {resource.id === 'api-keys' && config.apiKey && (
+            <div className="alert alert-info">
+              <div className="fw-medium mb-1">Active API key for public requests</div>
+              <code className="small user-select-all d-block mb-2">{config.apiKey}</code>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(config.apiKey);
+                    setSuccess('Active API key copied.');
+                  } catch {
+                    setError('Could not copy to clipboard.');
+                  }
+                }}
+              >
+                <IconClipboard size={14} className="me-1" />
+                Copy active key
+              </button>
+            </div>
+          )}
+          <Alert type="success" message={success} onClose={() => setSuccess('')} />
           <Alert type="danger" message={error} onClose={() => setError('')} />
 
           <div className="card">
@@ -222,7 +340,7 @@ export function ResourceListPage({ resource }: Props) {
                       <tr key={String(row.id ?? row.key)}>
                         {resource.columns.map((c) => (
                           <td key={c.key}>
-                            {c.render ? c.render(row) : rowText(row, c.key)}
+                            {renderCell(c.key, row, c.render)}
                           </td>
                         ))}
                         <td>

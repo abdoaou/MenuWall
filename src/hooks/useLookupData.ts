@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useApi } from '../context/ApiContext';
+import {
+  filterCategoryOptions,
+  filterParentCategoryOptions,
+  getTenantWebsiteId,
+} from '../utils/tenantFilters';
 import { unwrapList, type ApiRow } from '../utils/apiData';
 
 export type WebsiteOption = { id: number; name: string };
@@ -21,33 +26,34 @@ export function useLookupData() {
       request({ method: 'GET', path: '/parent-categories' }),
     ]);
 
-    const wRows = unwrapList((wRes.data as { data?: unknown })?.data ?? wRes.data);
-    setWebsites(
-      wRows.map((r) => ({
-        id: Number(r.id),
-        name: String(r.name ?? `Website #${r.id}`),
-      }))
-    );
+    const pRows = unwrapList((pRes.data as { data?: unknown })?.data ?? pRes.data);
+    const allParents = pRows.map((r) => ({
+      id: Number(r.id),
+      name: String(r.name ?? `Parent #${r.id}`),
+      website_id: Number(r.website_id) || 1,
+    }));
+    setParentCategories(filterParentCategoryOptions(allParents));
 
     const cRows = unwrapList((cRes.data as { data?: unknown })?.data ?? cRes.data);
-    setCategories(
-      cRows.map((r) => ({
-        id: Number(r.id),
-        name: String(r.name ?? `Category #${r.id}`),
-        parent_id:
-          r.parent_id === null || r.parent_id === undefined || r.parent_id === ''
-            ? null
-            : Number(r.parent_id),
-      }))
-    );
+    const allCategories = cRows.map((r) => ({
+      id: Number(r.id),
+      name: String(r.name ?? `Category #${r.id}`),
+      parent_id:
+        r.parent_id === null || r.parent_id === undefined || r.parent_id === ''
+          ? null
+          : Number(r.parent_id),
+    }));
+    setCategories(filterCategoryOptions(allCategories, allParents));
 
-    const pRows = unwrapList((pRes.data as { data?: unknown })?.data ?? pRes.data);
-    setParentCategories(
-      pRows.map((r) => ({
-        id: Number(r.id),
-        name: String(r.name ?? `Parent #${r.id}`),
-        website_id: Number(r.website_id) || 1,
-      }))
+    const wRows = unwrapList((wRes.data as { data?: unknown })?.data ?? wRes.data);
+    const wid = getTenantWebsiteId();
+    setWebsites(
+      wRows
+        .map((r) => ({
+          id: Number(r.id),
+          name: String(r.name ?? `Website #${r.id}`),
+        }))
+        .filter((w) => (wid ? w.id === wid : true))
     );
 
     setLoading(false);

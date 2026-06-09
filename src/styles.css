@@ -37,3 +37,21 @@ body {
   flex-direction: column;
   justify-content: center;
 }
+
+.mobile-nav-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1020;
+  border: 0;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+
+@media (max-width: 991.98px) {
+  .navbar-vertical .navbar-collapse.show {
+    display: block;
+    position: relative;
+    z-index: 1030;
+  }
+}

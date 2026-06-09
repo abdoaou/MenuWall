@@ -1,4 +1,5 @@
 import { DEFAULT_API_BASE } from '../config/api';
+import { tenant } from '../config/tenant';
 
 const KEYS = {
   baseUrl: 'menuwall_base_url',
@@ -24,11 +25,15 @@ function resolveBaseUrl(): string {
 }
 
 export function loadConfig() {
+  const websiteId = localStorage.getItem(KEYS.websiteId) || tenant.websiteId || '';
+  if (tenant.lockWebsite && tenant.websiteId && !localStorage.getItem(KEYS.websiteId)) {
+    localStorage.setItem(KEYS.websiteId, tenant.websiteId);
+  }
   return {
     baseUrl: resolveBaseUrl(),
     token: localStorage.getItem(KEYS.token) || '',
     refreshToken: localStorage.getItem(KEYS.refreshToken) || '',
-    websiteId: localStorage.getItem(KEYS.websiteId) || '',
+    websiteId: tenant.lockWebsite ? tenant.websiteId || websiteId : websiteId,
     apiKey: localStorage.getItem(KEYS.apiKey) || '',
   };
 }
@@ -36,6 +41,9 @@ export function loadConfig() {
 export function saveConfig(partial: Partial<ReturnType<typeof loadConfig>>) {
   const current = loadConfig();
   const next = { ...current, ...partial };
+  if (tenant.lockWebsite && tenant.websiteId) {
+    next.websiteId = tenant.websiteId;
+  }
   localStorage.setItem(KEYS.baseUrl, next.baseUrl);
   localStorage.setItem(KEYS.token, next.token);
   localStorage.setItem(KEYS.refreshToken, next.refreshToken);

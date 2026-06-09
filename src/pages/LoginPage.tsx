@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Alert } from '../components/Alert';
 import { useApi } from '../context/ApiContext';
+import { tenant } from '../config/tenant';
 
 export function LoginPage() {
   const { request, setConfig, isLoggedIn } = useApi();
@@ -41,7 +42,9 @@ export function LoginPage() {
       const token = data.token ?? data.data?.accessToken ?? '';
       const refresh = data.data?.refreshToken ?? '';
       const partial: { token: string; refreshToken: string; websiteId?: string } = { token, refreshToken: refresh };
-      if (data.data?.admin?.websiteId) {
+      if (tenant.lockWebsite && tenant.websiteId) {
+        partial.websiteId = tenant.websiteId;
+      } else if (data.data?.admin?.websiteId) {
         partial.websiteId = String(data.data.admin.websiteId);
       }
       setConfig(partial);
@@ -55,7 +58,7 @@ export function LoginPage() {
     <div className="page page-center">
       <div className="container container-tight py-4">
         <div className="text-center mb-4">
-          <h1 className="h2">MenuWall Admin</h1>
+          <h1 className="h2">{tenant.appTitle}</h1>
           <p className="text-secondary">Sign in to manage your menu</p>
         </div>
         <div className="card card-md">

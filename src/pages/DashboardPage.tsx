@@ -1,16 +1,32 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  IconCategory,
-  IconMenu2,
-  IconPackage,
-  IconWorld,
-} from '@tabler/icons-react';
+import { IconCategory, IconMenu2, IconPackage, IconWorld } from '@tabler/icons-react';
 import { PageHeader } from '../components/PageHeader';
+import { tenant } from '../config/tenant';
 import { useApi } from '../context/ApiContext';
+import {
+  filterCategoryRows,
+  filterParentCategoryRows,
+  filterProductRows,
+} from '../utils/tenantFilters';
 import { unwrapList } from '../utils/apiData';
 
 type Stat = { label: string; value: number | string; icon: typeof IconPackage; color: string };
+
+const ALL_TARGETS = [
+  { label: 'Products', resource: '/products', icon: IconPackage, color: 'blue' },
+  { label: 'Categories', resource: '/categories', icon: IconCategory, color: 'green' },
+  { label: 'Parent Categories', resource: '/parent-categories', icon: IconCategory, color: 'orange' },
+];
+
+const TARGETS = tenant.resourceIds
+  ? ALL_TARGETS
+  : [
+      { label: 'Products', resource: '/products', icon: IconPackage, color: 'blue' },
+      { label: 'Categories', resource: '/categories', icon: IconCategory, color: 'green' },
+      { label: 'Websites', resource: '/websites', icon: IconWorld, color: 'azure' },
+      { label: 'Menus', resource: '/menus', icon: IconMenu2, color: 'orange' },
+    ];
 
 export function DashboardPage() {
   const { request } = useApi();
@@ -22,25 +38,40 @@ export function DashboardPage() {
 
     async function load() {
       setLoading(true);
-      const targets = [
-        { label: 'Products', resource: '/products', icon: IconPackage, color: 'blue' },
-        { label: 'Categories', resource: '/categories', icon: IconCategory, color: 'green' },
-        { label: 'Websites', resource: '/websites', icon: IconWorld, color: 'azure' },
-        { label: 'Menus', resource: '/menus', icon: IconMenu2, color: 'orange' },
-      ];
 
       const results = await Promise.all(
-        targets.map(async (t) => {
+        TARGETS.map(async (t) => {
           const res = await request({
             method: 'GET',
             path: t.resource,
-            query: { page: 1, limit: 1 },
+            query: { page: 1, limit: 100 },
           });
           const list = unwrapList((res.data as { data?: unknown })?.data ?? res.data);
-          const total = (res.data as { data?: { meta?: { total?: number } } })?.data?.meta?.total;
+          let filtered = list;
+
+          if (t.resource === '/products') filtered = filterProductRows(list);
+          else if (t.resource === '/parent-categories') filtered = filterParentCategoryRows(list);
+          else if (t.resource === '/categories') {
+            const parentRes = await request({
+              method: 'GET',
+              path: '/parent-categories',
+              query: { page: 1, limit: 100 },
+            });
+            const parentList = filterParentCategoryRows(
+              unwrapList((parentRes.data as { data?: unknown })?.data ?? parentRes.data)
+            );
+            filtered = filterCategoryRows(
+              list,
+              parentList.map((p) => ({
+                id: Number(p.id),
+                website_id: Number(p.website_id),
+              }))
+            );
+          }
+
           return {
             label: t.label,
-            value: total ?? list.length,
+            value: filtered.length,
             icon: t.icon,
             color: t.color,
           };
@@ -59,14 +90,18 @@ export function DashboardPage() {
     };
   }, [request]);
 
+  const subtitle = tenant.lockWebsite
+    ? `Overview for ${tenant.brandName} (website ${tenant.websiteId})`
+    : 'Overview of your menu store';
+
   return (
     <>
-      <PageHeader title="Dashboard" subtitle="Overview of your menu store" />
+      <PageHeader title="Dashboard" subtitle={subtitle} />
       <div className="page-body">
         <div className="container-xl">
           <div className="row row-deck row-cards">
             {loading &&
-              [1, 2, 3, 4].map((i) => (
+              TARGETS.map((_, i) => (
                 <div className="col-sm-6 col-lg-3" key={i}>
                   <div className="card">
                     <div className="card-body">
@@ -108,12 +143,21 @@ export function DashboardPage() {
                     <Link to="/products" className="btn btn-primary">
                       View all products
                     </Link>
-                    <Link to="/websites" className="btn btn-outline-primary">
-                      Manage websites
-                    </Link>
-                    <Link to="/categories" className="btn btn-outline-secondary">
+                    <Link to="/categories" className="btn btn-outline-primary">
                       Manage categories
                     </Link>
+                    <Link to="/parent-categories" className="btn btn-outline-secondary">
+                      Manage parent categories
+                    </Link>
+                    {tenant.resourceIds ? (
+                      <a href="../menu.html" target="_blank" rel="noreferrer" className="btn btn-outline-secondary">
+                        Preview menu
+                      </a>
+                    ) : (
+                      <Link to="/websites" className="btn btn-outline-primary">
+                        Manage websites
+                      </Link>
+                    )}
                   </div>
                 </div>
               </div>

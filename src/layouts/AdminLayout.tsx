@@ -1,4 +1,5 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   IconApi,
   IconCategory,
@@ -12,9 +13,10 @@ import {
   IconWorld,
 } from '@tabler/icons-react';
 import { DEFAULT_API_BASE } from '../config/api';
+import { tenant } from '../config/tenant';
 import { useApi } from '../context/ApiContext';
 
-const NAV = [
+const ALL_NAV = [
   { to: '/', label: 'Dashboard', icon: IconLayoutDashboard, end: true },
   { to: '/products', label: 'Products', icon: IconPackage },
   { to: '/categories', label: 'Categories', icon: IconCategory },
@@ -26,10 +28,22 @@ const NAV = [
   { to: '/admins', label: 'Admins', icon: IconUsers },
 ];
 
+const NAV = tenant.resourceIds
+  ? ALL_NAV.filter(({ to }) =>
+      ['/', '/products', '/categories', '/parent-categories'].includes(to)
+    )
+  : ALL_NAV;
+
 export function AdminLayout() {
   const { config, setConfig, logout, isLoggedIn } = useApi();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const adminName = config.token ? 'Admin' : 'Guest';
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
 
   const handleLogout = () => {
     logout();
@@ -38,34 +52,58 @@ export function AdminLayout() {
 
   return (
     <div className="page">
+      {mobileNavOpen && (
+        <button
+          type="button"
+          className="mobile-nav-backdrop"
+          aria-label="Close menu"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
       <aside className="navbar navbar-vertical navbar-expand-lg" data-bs-theme="dark">
         <div className="container-fluid">
-          <button
-            className="navbar-toggler"
-            type="button"
-            data-bs-toggle="collapse"
-            data-bs-target="#sidebar-menu"
-            aria-controls="sidebar-menu"
-            aria-expanded="false"
-            aria-label="Toggle navigation"
+          <div className="d-flex align-items-center w-100 gap-2">
+            <button
+              className="navbar-toggler"
+              type="button"
+              aria-controls="sidebar-menu"
+              aria-expanded={mobileNavOpen}
+              aria-label="Toggle navigation"
+              onClick={() => setMobileNavOpen((open) => !open)}
+            >
+              <span className="navbar-toggler-icon" />
+            </button>
+
+            <h1 className="navbar-brand navbar-brand-autodark mb-0">
+              <NavLink to="/" className="navbar-brand-link">
+                <IconHome size={22} className="navbar-brand-image me-2" stroke={1.8} />
+                {tenant.brandName}
+              </NavLink>
+            </h1>
+
+            {isLoggedIn && (
+              <button
+                type="button"
+                className="btn btn-ghost-secondary btn-sm ms-auto d-lg-none"
+                onClick={handleLogout}
+              >
+                <IconLogout size={18} />
+                <span className="ms-1">Sign out</span>
+              </button>
+            )}
+          </div>
+
+          <div
+            className={`collapse navbar-collapse${mobileNavOpen ? ' show' : ''}`}
+            id="sidebar-menu"
           >
-            <span className="navbar-toggler-icon" />
-          </button>
-
-          <h1 className="navbar-brand navbar-brand-autodark">
-            <NavLink to="/" className="navbar-brand-link">
-              <IconHome size={22} className="navbar-brand-image me-2" stroke={1.8} />
-              MenuWall
-            </NavLink>
-          </h1>
-
-          <div className="collapse navbar-collapse" id="sidebar-menu">
             <ul className="navbar-nav pt-lg-3">
               {NAV.map(({ to, label, icon: Icon, end }) => (
                 <li className="nav-item" key={to}>
                   <NavLink
                     to={to}
                     end={end}
+                    onClick={() => setMobileNavOpen(false)}
                     className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
                   >
                     <span className="nav-link-icon d-md-none d-lg-inline-block">
@@ -88,8 +126,11 @@ export function AdminLayout() {
               className="form-control form-control-sm"
               style={{ width: 90 }}
               placeholder="ID"
-              value={config.websiteId}
-              onChange={(e) => setConfig({ websiteId: e.target.value })}
+              value={tenant.lockWebsite ? tenant.websiteId : config.websiteId}
+              onChange={(e) => {
+                if (!tenant.lockWebsite) setConfig({ websiteId: e.target.value });
+              }}
+              readOnly={tenant.lockWebsite}
               title="x-website-id for menus, settings, API keys"
             />
             <span className="avatar avatar-sm bg-primary-lt">{adminName.charAt(0)}</span>
@@ -109,7 +150,7 @@ export function AdminLayout() {
         <footer className="footer footer-transparent d-print-none">
           <div className="container-xl">
             <div className="text-secondary small py-3">
-              Menu API · <code className="text-secondary">{DEFAULT_API_BASE}</code>
+              {tenant.brandName} · <code className="text-secondary">{DEFAULT_API_BASE}</code>
             </div>
           </div>
         </footer>

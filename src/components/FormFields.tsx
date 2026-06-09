@@ -1,4 +1,5 @@
 import type { FieldDef } from '../config/adminResources';
+import { tenant } from '../config/tenant';
 import { useLookupData } from '../hooks/useLookupData';
 import { assetUrl } from '../utils/apiData';
 
@@ -20,11 +21,13 @@ export function FormFields({ fields, form, setForm, isEdit, imageFile, setImageF
     parentById,
   } = useLookupData();
 
-  const websiteId = form.website_id
-    ? Number(form.website_id)
-    : form.website_filter
-      ? Number(form.website_filter)
-      : '';
+  const websiteId = tenant.lockWebsite && tenant.websiteId
+    ? Number(tenant.websiteId)
+    : form.website_id
+      ? Number(form.website_id)
+      : form.website_filter
+        ? Number(form.website_filter)
+        : '';
   const filteredParents = parentCategoriesForWebsite(websiteId);
   const filteredCategories = categoriesForWebsite(websiteId, form.parent_category_id);
 
@@ -66,6 +69,9 @@ export function FormFields({ fields, form, setForm, isEdit, imageFile, setImageF
   return (
     <>
       {fields.map((f) => {
+        if (tenant.lockWebsite && (f.type === 'website' || f.type === 'website_filter')) {
+          return null;
+        }
         if (f.showOn === 'create' && isEdit) return null;
         if (f.showOn === 'edit' && !isEdit) return null;
         if (isEdit && f.name === 'password' && f.optionalOnEdit) {

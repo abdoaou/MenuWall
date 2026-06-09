@@ -6,10 +6,12 @@ import { PageHeader } from '../components/PageHeader';
 import { ProductCard } from '../components/ProductCard';
 import { ProductVariantsEditor } from '../components/ProductVariantsEditor';
 import { StatusBadge } from '../components/StatusBadge';
-import { PRODUCT_FORM_FIELDS } from '../config/adminResources';
+import { getProductFormFields } from '../config/adminResources';
+import { tenant } from '../config/tenant';
 import { useApi } from '../context/ApiContext';
 import { rowToForm, useLookupData } from '../hooks/useLookupData';
 import { buildFormBody, buildMultipartBody, emptyFormFromFields } from '../utils/formBody';
+import { filterProductRows } from '../utils/tenantFilters';
 import {
   assetUrl,
   formatMoney,
@@ -95,7 +97,7 @@ export function ProductsPage() {
       return;
     }
     const data = (res.data as { data?: unknown })?.data ?? res.data;
-    setProducts(unwrapList(data));
+    setProducts(filterProductRows(unwrapList(data)));
   }, [request, search, status]);
 
   useEffect(() => {
@@ -105,8 +107,10 @@ export function ProductsPage() {
 
   const openCreate = () => {
     setEditing(null);
-    const next = emptyFormFromFields(PRODUCT_FORM_FIELDS);
+    const fields = getProductFormFields();
+    const next = emptyFormFromFields(fields);
     if (config.websiteId) next.website_id = config.websiteId;
+    else if (tenant.websiteId) next.website_id = tenant.websiteId;
     setForm(next);
     setImageFile(null);
     setVariants([]);
@@ -117,7 +121,8 @@ export function ProductsPage() {
   const openEdit = (row: ApiRow) => {
     setEditing(row);
     setSelected(null);
-    const names = PRODUCT_FORM_FIELDS.map((f) => f.name);
+    const fields = getProductFormFields();
+    const names = fields.map((f) => f.name);
     const next = rowToForm(row, names);
     if (row.featured !== undefined) {
       next.featured = row.featured ? 'true' : 'false';
@@ -140,7 +145,12 @@ export function ProductsPage() {
   const handleSave = async () => {
     setSaving(true);
     setError('');
-    const body = buildFormBody(form, PRODUCT_FORM_FIELDS, isEdit, { skipImage: true });
+    const fields = getProductFormFields();
+    const body = buildFormBody(form, fields, isEdit, { skipImage: true });
+
+    if (!body.website_id && tenant.lockWebsite && tenant.websiteId) {
+      body.website_id = Number(tenant.websiteId);
+    }
 
     if (!body.website_id) {
       setSaving(false);
@@ -438,7 +448,7 @@ export function ProductsPage() {
       {showForm && (
         <EntityFormModal
           title={isEdit ? 'Edit product' : 'New product'}
-          fields={PRODUCT_FORM_FIELDS}
+          fields={getProductFormFields()}
           form={form}
           setForm={setForm}
           isEdit={isEdit}

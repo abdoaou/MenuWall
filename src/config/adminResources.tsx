@@ -1,6 +1,7 @@
 import type { ApiRow } from '../utils/apiData';
 import { formatDate, rowText } from '../utils/apiData';
 import { StatusBadge } from '../components/StatusBadge';
+import { tenant } from './tenant';
 
 export type FieldDef = {
   name: string;
@@ -57,6 +58,11 @@ export const PRODUCT_FORM_FIELDS: FieldDef[] = [
   { name: 'status', label: 'Status', type: 'status_product' },
   { name: 'featured', label: 'Featured product', type: 'checkbox' },
 ];
+
+export function getProductFormFields(): FieldDef[] {
+  if (!tenant.lockWebsite) return PRODUCT_FORM_FIELDS;
+  return PRODUCT_FORM_FIELDS.filter((f) => f.type !== 'website');
+}
 
 export const ADMIN_RESOURCES: ResourceDef[] = [
   {
@@ -174,6 +180,7 @@ export const ADMIN_RESOURCES: ResourceDef[] = [
     columns: [
       { key: 'id', label: 'ID' },
       { key: 'name', label: 'Name', render: (r) => rowText(r, 'name', 'label') },
+      { key: 'key', label: 'API key' },
       { key: 'created_at', label: 'Created', render: (r) => formatDate(r.created_at) },
     ],
     formFields: [{ name: 'name', label: 'Name', required: true }],
@@ -188,8 +195,10 @@ export const ADMIN_RESOURCES: ResourceDef[] = [
       { key: 'id', label: 'ID' },
       { key: 'username', label: 'Username', render: (r) => rowText(r, 'username') },
       { key: 'email', label: 'Email', render: (r) => rowText(r, 'email') },
+      { key: 'website_id', label: 'Website' },
     ],
     formFields: [
+      { name: 'website_id', label: 'Website', type: 'website' },
       { name: 'username', label: 'Username', required: true },
       { name: 'email', label: 'Email', required: true },
       {
@@ -203,3 +212,8 @@ export const ADMIN_RESOURCES: ResourceDef[] = [
     ],
   },
 ];
+
+export function getAdminResources(): ResourceDef[] {
+  if (!tenant.resourceIds) return ADMIN_RESOURCES;
+  return ADMIN_RESOURCES.filter((r) => tenant.resourceIds!.includes(r.id));
+}
